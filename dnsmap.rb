@@ -17,37 +17,37 @@ require "active_support"
 
 class Servers
   def self.latest_reliable_server_list
-  url = "https://public-dns.info/nameservers.csv"
+    url = "https://public-dns.info/nameservers.csv"
 
-  download = open(url)
-  CSV.new(download, headers: true).
-      select { |r| r["reliability"].to_f > 0.95 }.
-    select { |r| r["ip"] =~ /\d+\.\d+\.\d+\.\d+/ }
-end
+    download = open(url)
+    CSV.new(download, headers: true).
+      select { |r| r["reliability"].to_f > 0.9 }.
+      select { |r| r["ip"] =~ /\d+\.\d+\.\d+\.\d+/ }
+  end
 
   def self.latest_reliable_global_servers
-  latest_reliable_server_list.
-    group_by { |r| r["country_id"] }.
-    map { |_, rows| rows.first }.
-    map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
-end
+    latest_reliable_server_list.
+      group_by { |r| r["country_id"] }.
+      map { |_, rows| rows.first }.
+      map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
+  end
 
   def self.latest_reliable_us_servers
-  latest_reliable_server_list.
-    select { |r| r["country_id"] == "US" }.
-    map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
-end
+    latest_reliable_server_list.
+      select { |r| r["country_id"] == "US" }.
+      map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
+  end
 end
 
 def group_by_domains(output)
+  return output if output =~ /^DigError/
+
   output.
     uniq.
     sort.
-    map { |ln| ln.split(/\./) }.
+    map { |ln| ln.downcase.split(/\./) }.
     group_by { |ary| ary[1..2].join(".") }.
     map { |domain, servers| [domain, servers.map(&:first)] }.to_h
-rescue
-  output.join.split(";;").last
 end
 
 def registrar_nameservers(domain)
@@ -56,23 +56,29 @@ def registrar_nameservers(domain)
   # TODO: \ to do, but, not worth my time right now.
 
   registrar_nameservers = `whois #{domain}`.scan(/Name Server: (\S+).*/).flatten
+  result = group_by_domains(registrar_nameservers)
+
   puts "Registrar Nameservers:"
   puts "======================"
-  puts group_by_domains(registrar_nameservers)
+  puts result
   puts
+
+  result
 end
 
 class Digger
+  class DigError < StandardError; end
+
   def self.dig_ns_records(domain, ip)
-  # `dig @#{ip} ns #{domain} +short +time=1`.split("\n")
-  opts = {nameserver: ip, do_caching: false, query_timeout: 1}
-  Dnsruby::Resolver.new(opts).query(domain, 'ns').answer.map(&:domainname).map(&:to_s)
-rescue => e
-  ["#{e.class.to_s}: #{e.message}"]
-end
+    # `dig @#{ip} ns #{domain} +short +time=1`.split("\n")
+    opts = {nameserver: ip, do_caching: false, query_timeout: 1}
+    Dnsruby::Resolver.new(opts).query(domain, 'ns').answer.map(&:domainname).map(&:to_s)
+  rescue => e
+    "DigError: #{e.class.to_s}: #{e.message}"
+  end
 end
 
-def dns_results(domain, geo_area)
+def dns_results(domain, geo_area, authoritative)
   geo_area = ["global", "us"].include?(geo_area) ? geo_area : "global"
   ips = [{country_id: "US", name: "google", ip: "8.8.8.8", },
          {country_id: "US", name: "cloudflare", ip: "1.1.1.1", }] +
@@ -83,8 +89,15 @@ def dns_results(domain, geo_area)
 
   puts "Checking #{ips.length} servers"
   results = ips.map do |r|
-    print "."
-    r[:result] = group_by_domains(Digger.dig_ns_records(domain, r[:ip]))
+    r[:result] = group_by_domains(Digger.dig_ns_records(domain, r[:ip])).tap do |server_result|
+      if server_result =~ /^DigError/
+        print "e"
+      elsif server_result != authoritative
+        print("x")
+      else
+        print(".")
+      end
+    end
     r
   end
   puts
@@ -102,5 +115,5 @@ if domain.nil?
 end
 
 geo_area = ARGV[1]
-registrar_nameservers domain
-dns_results domain, geo_area
+authoritative = registrar_nameservers domain
+dns_results domain, geo_area, authoritative
