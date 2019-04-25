@@ -18,6 +18,16 @@
 # Do a whois to grab the configured nameservers
 
 require "open-uri"
+require "csv"
+
+def download_latest_reliable_dns_servers
+  url = "https://public-dns.info/nameservers.csv"
+
+  download = open(url)
+  CSV.new(download, headers: true).
+    select { |r| r["reliability"].to_f > 0.95 }.
+    map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
+end
 
 def group_by_domains(output)
   output.
@@ -35,13 +45,13 @@ puts group_by_domains(registrar_nameservers.uniq)
 puts
 
 ips = [{country_id: "US", name: "google", ip: "8.8.8.8", },
-       {country_id: "US", name: "cloudflare", ip: "1.1.1.1", },
-       {country_id: "JP", name: "[japan]", ip: "210.225.175.66"},
-       {country_id: "DE", name: "mail.lkrauss.de", ip: "213.239.204.35"}]
+       {country_id: "US", name: "cloudflare", ip: "1.1.1.1", }] +
+  download_latest_reliable_dns_servers
 
 ips.each do |r|
-  puts r[:name]
-  puts '-' * r[:name].length
+  title = r[:name] || r[:country_id]
+  puts title
+  puts '-' * title.length
   puts group_by_domains(`dig @#{r[:ip]} ns clabs.org +short`.split("\n"))
   puts
 end
