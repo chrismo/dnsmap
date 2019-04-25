@@ -15,26 +15,28 @@ end
 require "tablesmith"
 require "active_support"
 
-def latest_reliable_server_list
+class Servers
+  def self.latest_reliable_server_list
   url = "https://public-dns.info/nameservers.csv"
 
   download = open(url)
   CSV.new(download, headers: true).
-    select { |r| r["reliability"].to_f > 0.8 }.
+      select { |r| r["reliability"].to_f > 0.95 }.
     select { |r| r["ip"] =~ /\d+\.\d+\.\d+\.\d+/ }
 end
 
-def latest_reliable_global_servers
+  def self.latest_reliable_global_servers
   latest_reliable_server_list.
     group_by { |r| r["country_id"] }.
     map { |_, rows| rows.first }.
     map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
 end
 
-def latest_reliable_us_servers
+  def self.latest_reliable_us_servers
   latest_reliable_server_list.
     select { |r| r["country_id"] == "US" }.
     map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
+end
 end
 
 def group_by_domains(output)
@@ -60,23 +62,29 @@ def registrar_nameservers(domain)
   puts
 end
 
-def dig_ns_records(domain, ip)
+class Digger
+  def self.dig_ns_records(domain, ip)
   # `dig @#{ip} ns #{domain} +short +time=1`.split("\n")
   opts = {nameserver: ip, do_caching: false, query_timeout: 1}
   Dnsruby::Resolver.new(opts).query(domain, 'ns').answer.map(&:domainname).map(&:to_s)
 rescue => e
   ["#{e.class.to_s}: #{e.message}"]
 end
+end
 
 def dns_results(domain, geo_area)
   geo_area = ["global", "us"].include?(geo_area) ? geo_area : "global"
   ips = [{country_id: "US", name: "google", ip: "8.8.8.8", },
          {country_id: "US", name: "cloudflare", ip: "1.1.1.1", }] +
-    send("latest_reliable_#{geo_area}_servers")
+    Servers.send("latest_reliable_#{geo_area}_servers")
 
+  queue = Queue.new
+  ips.each { |ip| queue.push(ip) }
+
+  puts "Checking #{ips.length} servers"
   results = ips.map do |r|
     print "."
-    r[:result] = group_by_domains(dig_ns_records(domain, r[:ip]))
+    r[:result] = group_by_domains(Digger.dig_ns_records(domain, r[:ip]))
     r
   end
   puts
