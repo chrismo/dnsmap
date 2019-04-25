@@ -10,29 +10,46 @@ gemfile do
   gem "tablesmith"
   gem "activesupport"
   gem "dnsruby"
+  gem "slop", "~> 4"
 end
 
 require "tablesmith"
 require "active_support"
+require "slop"
 
 class Servers
-  def self.latest_reliable_server_list
+  attr_reader :total_count
+
+  def initialize(reliability_threshold = 96)
+    @reliability_threshold = reliability_threshold * 0.01
+  end
+
+  def latest_reliable_server_list
     url = "https://public-dns.info/nameservers.csv"
 
     download = open(url)
+
+    # select true is to read all the rows first, so then it's easy to get a count
     CSV.new(download, headers: true).
-      select { |r| r["reliability"].to_f >= 0.9 }.
+      select { true }.
+      tap { |ary| @total_count = ary.count }.
+      select { |r| r["reliability"].to_f >= @reliability_threshold }.
       select { |r| r["ip"] =~ /\d+\.\d+\.\d+\.\d+/ }
   end
 
-  def self.latest_reliable_global_servers
+  def latest_reliable_global_servers_one_per_country
     latest_reliable_server_list.
       group_by { |r| r["country_id"] }.
       map { |_, rows| rows.first }.
       map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
   end
 
-  def self.latest_reliable_us_servers
+  def latest_reliable_global_servers
+    latest_reliable_server_list.
+      map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
+  end
+
+  def latest_reliable_us_servers
     latest_reliable_server_list.
       select { |r| r["country_id"] == "US" }.
       map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
@@ -65,8 +82,8 @@ class Digger
     # TODO: \ Trying to re-use it here looks like a lot of work. Cool to be able
     # TODO: \ to do, but, not worth my time right now.
 
-    registrar_nameservers = `whois #{@domain}`.scan(/Name Server: (\S+).*/).flatten
-    @result = group_by_domains(registrar_nameservers)
+    registrar_name_servers = `whois #{@domain}`.scan(/Name Server: (\S+).*/).flatten
+    @result = group_by_domains(registrar_name_servers)
   end
 
   def dig
@@ -90,17 +107,18 @@ class Digger
 end
 
 class Aggregator
-  attr_reader :authoritative, :ips, :results
+  attr_reader :authoritative, :ips, :results, :total_server_count
 
-  def initialize(domain, geo_area)
+  def initialize(domain, geo_area, reliability:, diff_only:)
     @domain = domain
     @geo_area = ["global", "us"].include?(geo_area) ? geo_area : "global"
+    @reliability = reliability
+    @diff_only = diff_only
     lookup_authoritative
     lookup_ips
   end
 
   def dns_results
-    # TODO: threaded lookups
     queue = Queue.new
     @ips.each { |ip| queue.push(ip) }
 
@@ -109,17 +127,21 @@ class Aggregator
     workers = (0..7).map do
       Thread.new do
         begin
+          result_type = nil
           while ip_record = queue.pop(true)
             ip_record[:result] = Digger.new(ip_record[:ip], @domain).dig_ns_records do |server_result|
-              # yielded up out of a thread isn't too awesome, but it's only for
+              # yielding up out of a thread isn't too awesome, but it's only for
               # console output for now, should be fine-ish.
-              yield result_type(server_result) if block_given?
+              result_type = result_type(server_result)
+              yield result_type if block_given?
               server_result
             end
-            output_queue << ip_record
+            if (@diff_only && result_type == :mismatch) || !@diff_only
+              output_queue << ip_record
+            end
           end
         rescue ThreadError
-          # ignored on purpose
+          # ignored
         end
       end
     end
@@ -157,9 +179,12 @@ class Aggregator
   end
 
   def lookup_ips
+    servers = Servers.new(@reliability)
+    selected_servers = servers.send("latest_reliable_#{@geo_area}_servers")
+    @total_server_count = servers.total_count
     @ips = [{country_id: "US", name: "google", ip: "8.8.8.8", },
             {country_id: "US", name: "cloudflare", ip: "1.1.1.1", }] +
-      Servers.send("latest_reliable_#{@geo_area}_servers")
+      selected_servers
   end
 end
 
@@ -175,7 +200,7 @@ class ConsoleOutput
     puts @aggregator.authoritative
     puts
 
-    puts "Checking #{@aggregator.ips.length} servers"
+    puts "Checking #{@aggregator.ips.length}/#{@aggregator.total_server_count} servers"
 
     results = @aggregator.dns_results do |result|
       case result
@@ -193,17 +218,17 @@ class ConsoleOutput
   end
 end
 
-def usage
-  puts "Usage: #{File.basename(__FILE__)} [domain ['us' or 'global']]"
+opts = Slop.parse do |o|
+  o.banner = "Usage: #{File.basename(__FILE__)} domain ['us' | 'global']"
+  o.bool '-d', '--differences-only', 'only list differences from authoritative'
+  o.integer '-r', '--reliability', 'server reliability threshold', default: 96
+  o.on '-h', '--help' do
+    puts o
+    exit
+  end
 end
 
-domain = ARGV[0]
-if domain.nil?
-  usage
-  exit(1)
-end
-
-# TODO: options: filter out matches in table, and reliability factor
-
-geo_area = ARGV[1]
-ConsoleOutput.new(Aggregator.new(domain, geo_area))
+domain, geo_area = *opts.args
+ConsoleOutput.new(Aggregator.new(domain, geo_area,
+                                 reliability: opts[:reliability],
+                                 diff_only: opts[:differences_only]))
