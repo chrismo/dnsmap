@@ -20,6 +20,15 @@
 require "open-uri"
 require "csv"
 
+require "bundler/inline"
+
+gemfile do
+  source "https://rubygems.org"
+  gem "tablesmith"
+end
+
+require "tablesmith"
+
 def download_latest_reliable_dns_servers
   url = "https://public-dns.info/nameservers.csv"
 
@@ -61,10 +70,9 @@ puts
 ips = [{country_id: "US", name: "google", ip: "8.8.8.8", },
        {country_id: "US", name: "cloudflare", ip: "1.1.1.1", }] + latest_reliable_us_servers
 
-ips.each do |r|
-  title = r[:name] || r[:country_id]
-  puts title
-  puts '-' * title.length
-  puts group_by_domains(`dig @#{r[:ip]} ns clabs.org +short +time=1`.split("\n"))
-  puts
+results = ips.map do |r|
+  r[:result] = group_by_domains(`dig @#{r[:ip]} ns clabs.org +short +time=1`.split("\n"))
+  r
 end
+puts
+puts results.to_table.pretty_inspect
