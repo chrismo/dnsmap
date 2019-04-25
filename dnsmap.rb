@@ -20,7 +20,7 @@ def latest_reliable_server_list
 
   download = open(url)
   CSV.new(download, headers: true).
-    select { |r| r["reliability"].to_f > 0.95 }.
+    select { |r| r["reliability"].to_f > 0.8 }.
     select { |r| r["ip"] =~ /\d+\.\d+\.\d+\.\d+/ }
 end
 
@@ -62,7 +62,10 @@ end
 
 def dig_ns_records(domain, ip)
   # `dig @#{ip} ns #{domain} +short +time=1`.split("\n")
-  Dnsruby::Resolver.new(nameserver: ip, do_caching: false).query(domain, 'ns').answer.map(&:domainname).map(&:to_s)
+  opts = {nameserver: ip, do_caching: false, query_timeout: 1}
+  Dnsruby::Resolver.new(opts).query(domain, 'ns').answer.map(&:domainname).map(&:to_s)
+rescue => e
+  ["#{e.class.to_s}: #{e.message}"]
 end
 
 def dns_results(domain, geo_area)
