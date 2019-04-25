@@ -46,19 +46,30 @@ rescue
   output.join.split(";;").last
 end
 
-registrar_nameservers = `whois clabs.org`.scan(/Name Server: (\S+).*/).flatten
-puts "Registrar Nameservers:"
-puts "======================"
-puts group_by_domains(registrar_nameservers.uniq)
-puts
-
-ips = [{country_id: "US", name: "google", ip: "8.8.8.8", },
-       {country_id: "US", name: "cloudflare", ip: "1.1.1.1", }] + latest_reliable_us_servers
-
-results = ips.map do |r|
-  print "."
-  r[:result] = group_by_domains(`dig @#{r[:ip]} ns clabs.org +short +time=1`.split("\n"))
-  r
+def registrar_nameservers(domain)
+  registrar_nameservers = `whois #{domain}`.scan(/Name Server: (\S+).*/).flatten
+  puts "Registrar Nameservers:"
+  puts "======================"
+  puts group_by_domains(registrar_nameservers)
+  puts
 end
-puts
-puts results.to_table.pretty_inspect
+
+def dns_results(domain, geo_area)
+  geo_area = ["global", "us"].include?(geo_area) ? geo_area : "global"
+  ips = [{country_id: "US", name: "google", ip: "8.8.8.8", },
+         {country_id: "US", name: "cloudflare", ip: "1.1.1.1", }] +
+    send("latest_reliable_#{geo_area}_servers")
+
+  results = ips.map do |r|
+    print "."
+    r[:result] = group_by_domains(`dig @#{r[:ip]} ns #{domain} +short +time=1`.split("\n"))
+    r
+  end
+  puts
+  puts results.to_table.pretty_inspect
+end
+
+domain = ARGV[0]
+geo_area = ARGV[1]
+registrar_nameservers domain
+dns_results domain, geo_area
