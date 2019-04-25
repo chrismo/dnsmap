@@ -1,22 +1,5 @@
 #!/usr/bin/env ruby
 
-# "Global" is a bit of a misnomer here. A good site for this is
-# https://dnschecker.org/. The following dig commands simply cherry-pick a few
-# "global" DNS IPs that seemed to give varying results when we were in a
-# Primary/Primary setup.
-#
-# https://public-dns.info/nameserver/ to look up more servers.
-#
-# Another good general purpose dns site: https://dnslytics.com/
-
-
-# Download .csv from public-dns.info
-#
-# Parse it, grab everything .96 reliability or higher, select 1 per country.
-# Have at it.
-#
-# Do a whois to grab the configured nameservers
-
 require "open-uri"
 require "csv"
 
@@ -25,11 +8,13 @@ require "bundler/inline"
 gemfile do
   source "https://rubygems.org"
   gem "tablesmith"
+  gem "activesupport"
 end
 
 require "tablesmith"
+require "active_support"
 
-def download_latest_reliable_dns_servers
+def latest_reliable_server_list
   url = "https://public-dns.info/nameservers.csv"
 
   download = open(url)
@@ -38,14 +23,14 @@ def download_latest_reliable_dns_servers
 end
 
 def latest_reliable_global_servers
-  download_latest_reliable_dns_servers.
+  latest_reliable_server_list.
     group_by { |r| r["country_id"] }.
     map { |_, rows| rows.first }.
     map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
 end
 
 def latest_reliable_us_servers
-  download_latest_reliable_dns_servers.
+  latest_reliable_server_list.
     select { |r| r["country_id"] == "US" }.
     map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
 end
@@ -71,6 +56,7 @@ ips = [{country_id: "US", name: "google", ip: "8.8.8.8", },
        {country_id: "US", name: "cloudflare", ip: "1.1.1.1", }] + latest_reliable_us_servers
 
 results = ips.map do |r|
+  print "."
   r[:result] = group_by_domains(`dig @#{r[:ip]} ns clabs.org +short +time=1`.split("\n"))
   r
 end
