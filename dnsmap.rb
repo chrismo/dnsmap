@@ -9,6 +9,7 @@ gemfile do
   source "https://rubygems.org"
   gem "tablesmith"
   gem "activesupport"
+  gem "dnsruby"
 end
 
 require "tablesmith"
@@ -48,6 +49,8 @@ rescue
 end
 
 def registrar_nameservers(domain)
+  # TODO: I think dnsruby has a way to do this directly, without parsing whois output.
+
   registrar_nameservers = `whois #{domain}`.scan(/Name Server: (\S+).*/).flatten
   puts "Registrar Nameservers:"
   puts "======================"
@@ -70,7 +73,15 @@ def dns_results(domain, geo_area)
   puts results.to_table.pretty_inspect
 end
 
+def usage
+  puts "#{File.basename(__FILE__)} [domain ['us' or 'global']]"
+end
+
 domain = ARGV[0]
+if domain.nil?
+  usage; exit(1)
+end
+
 geo_area = ARGV[1]
 registrar_nameservers domain
 dns_results domain, geo_area
