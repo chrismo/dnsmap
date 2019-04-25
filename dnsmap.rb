@@ -36,6 +36,8 @@ def group_by_domains(output)
     map { |ln| ln.split(/\./) }.
     group_by { |ary| ary[1..2].join(".") }.
     map { |domain, servers| [domain, servers.map(&:first)] }.to_h
+rescue
+  output.join.split(";;").last
 end
 
 registrar_nameservers = `whois clabs.org`.scan(/Name Server: (\S+).*/).flatten
@@ -52,6 +54,6 @@ ips.each do |r|
   title = r[:name] || r[:country_id]
   puts title
   puts '-' * title.length
-  puts group_by_domains(`dig @#{r[:ip]} ns clabs.org +short`.split("\n"))
+  puts group_by_domains(`dig @#{r[:ip]} ns clabs.org +short +time=1`.split("\n"))
   puts
 end
