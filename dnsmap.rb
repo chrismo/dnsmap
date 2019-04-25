@@ -90,7 +90,7 @@ class Digger
 end
 
 class Aggregator
-  attr_reader :authoritative, :ips
+  attr_reader :authoritative, :ips, :results
 
   def initialize(domain, geo_area)
     @domain = domain
@@ -104,15 +104,13 @@ class Aggregator
   queue = Queue.new
     @ips.each { |ip| queue.push(ip) }
 
-    results = @ips.map do |r|
+    @results = @ips.map do |r|
       r[:result] = Digger.new(r[:ip], @domain).dig_ns_records do |server_result|
         yield result_type(server_result) if block_given?
         server_result
     end
     r
   end
-  puts
-  puts results.to_table.pretty_inspect
 end
 
   private
@@ -152,7 +150,7 @@ class ConsoleOutput
 
     puts "Checking #{@aggregator.ips.length} servers"
 
-    @aggregator.dns_results do |result|
+    results = @aggregator.dns_results do |result|
       case result
       when :error
         print 'e'
@@ -162,6 +160,9 @@ class ConsoleOutput
         print '.'
       end
     end
+
+    puts
+    puts results.to_table.pretty_inspect
   end
 end
 
