@@ -19,10 +19,19 @@
 
 require "open-uri"
 
+def group_by_domains(output)
+  output.
+    uniq.
+    sort.
+    map { |ln| ln.split(/\./) }.
+    group_by { |ary| ary[1..2].join(".") }.
+    map { |domain, servers| [domain, servers.map(&:first)] }.to_h
+end
+
 registrar_nameservers = `whois clabs.org`.scan(/Name Server: (\S+).*/).flatten
 puts "Registrar Nameservers:"
 puts "======================"
-puts registrar_nameservers.uniq
+puts group_by_domains(registrar_nameservers.uniq)
 puts
 
 ips = [{country_id: "US", name: "google", ip: "8.8.8.8", },
@@ -33,6 +42,6 @@ ips = [{country_id: "US", name: "google", ip: "8.8.8.8", },
 ips.each do |r|
   puts r[:name]
   puts '-' * r[:name].length
-  puts `dig @#{r[:ip]} ns clabs.org +short`.split("\n")
+  puts group_by_domains(`dig @#{r[:ip]} ns clabs.org +short`.split("\n"))
   puts
 end
