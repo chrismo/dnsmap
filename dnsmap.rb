@@ -19,7 +19,8 @@ def latest_reliable_server_list
 
   download = open(url)
   CSV.new(download, headers: true).
-    select { |r| r["reliability"].to_f > 0.95 }
+    select { |r| r["reliability"].to_f > 0.95 }.
+    select { |r| r["ip"] =~ /\d+\.\d+\.\d+\.\d+/ }
 end
 
 def latest_reliable_global_servers
