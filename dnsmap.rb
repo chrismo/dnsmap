@@ -60,6 +60,11 @@ def registrar_nameservers(domain)
   puts
 end
 
+def dig_ns_records(domain, ip)
+  # `dig @#{ip} ns #{domain} +short +time=1`.split("\n")
+  Dnsruby::Resolver.new(nameserver: ip, do_caching: false).query(domain, 'ns').answer.map(&:domainname).map(&:to_s)
+end
+
 def dns_results(domain, geo_area)
   geo_area = ["global", "us"].include?(geo_area) ? geo_area : "global"
   ips = [{country_id: "US", name: "google", ip: "8.8.8.8", },
@@ -68,7 +73,7 @@ def dns_results(domain, geo_area)
 
   results = ips.map do |r|
     print "."
-    r[:result] = group_by_domains(`dig @#{r[:ip]} ns #{domain} +short +time=1`.split("\n"))
+    r[:result] = group_by_domains(dig_ns_records(domain, r[:ip]))
     r
   end
   puts
@@ -76,12 +81,13 @@ def dns_results(domain, geo_area)
 end
 
 def usage
-  puts "#{File.basename(__FILE__)} [domain ['us' or 'global']]"
+  puts "Usage: #{File.basename(__FILE__)} [domain ['us' or 'global']]"
 end
 
 domain = ARGV[0]
 if domain.nil?
-  usage; exit(1)
+  usage
+  exit(1)
 end
 
 geo_area = ARGV[1]
