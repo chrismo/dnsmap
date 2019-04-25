@@ -21,7 +21,7 @@ class Servers
 
     download = open(url)
     CSV.new(download, headers: true).
-      select { |r| r["reliability"].to_f >= 0.96 }.
+      select { |r| r["reliability"].to_f >= 0.9 }.
       select { |r| r["ip"] =~ /\d+\.\d+\.\d+\.\d+/ }
   end
 
@@ -100,20 +100,47 @@ class Aggregator
   end
 
   def dns_results
-  # TODO: threaded lookups
-  queue = Queue.new
+    # TODO: threaded lookups
+    queue = Queue.new
     @ips.each { |ip| queue.push(ip) }
 
-    @results = @ips.map do |r|
-      r[:result] = Digger.new(r[:ip], @domain).dig_ns_records do |server_result|
-        yield result_type(server_result) if block_given?
-        server_result
+    output_queue = Queue.new
+
+    workers = (0..7).map do
+      Thread.new do
+        begin
+          while ip_record = queue.pop(true)
+            ip_record[:result] = Digger.new(ip_record[:ip], @domain).dig_ns_records do |server_result|
+              # yielded up out of a thread isn't too awesome, but it's only for
+              # console output for now, should be fine-ish.
+              yield result_type(server_result) if block_given?
+              server_result
+            end
+            output_queue << ip_record
+          end
+        rescue ThreadError
+          # ignored on purpose
+        end
+      end
     end
-    r
+    workers.map(&:join)
+
+    queue_to_array(output_queue)
   end
-end
 
   private
+
+  def queue_to_array(queue)
+    [].tap do |ary|
+      begin
+        while item = queue.pop(true)
+          ary << item
+        end
+      rescue ThreadError
+        # ignored
+      end
+    end
+  end
 
   def result_type(server_result)
     if server_result =~ /^DigError/
