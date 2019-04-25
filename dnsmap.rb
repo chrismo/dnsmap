@@ -51,9 +51,7 @@ class Digger
   end
 
   def dig_ns_records
-    @result = group_by_domains(dig)
-    yield result_type if block_given?
-    @result
+    @result = group_by_domains(dig).tap { |r| yield r if block_given? }
   end
 
   def authoritative_ns_records
@@ -61,16 +59,6 @@ class Digger
   end
 
   private
-
-  def result_type
-    if @result =~ /^DigError/
-      :error
-    elsif @result != authoritative
-      :mismatch
-    else
-      :match
-    end
-  end
 
   def registrar_name_servers
     # TODO: dnsruby has a Recursor class which is really complicated internally.
@@ -102,39 +90,24 @@ class Digger
 end
 
 class Aggregator
+  attr_reader :authoritative, :ips
+
   def initialize(domain, geo_area)
     @domain = domain
     @geo_area = ["global", "us"].include?(geo_area) ? geo_area : "global"
-  end
-
-  def execute
-    @authoritative = Digger.new(nil, @domain).authoritative_ns_records
-    dns_results
+    lookup_authoritative
+    lookup_ips
   end
 
   def dns_results
-  puts "Authoritative"
-  puts "============="
-    puts @authoritative
-  puts
-
-    lookup_ips
-
   # TODO: threaded lookups
   queue = Queue.new
     @ips.each { |ip| queue.push(ip) }
 
-  puts "Checking #{ips.length} servers"
     results = @ips.map do |r|
       r[:result] = Digger.new(r[:ip], @domain).dig_ns_records do |server_result|
-        case server_result
-        when :error
-        print "e"
-        when :mismatch
-        print "x"
-      else
-        print "."
-      end
+        yield result_type(server_result) if block_given?
+        server_result
     end
     r
   end
@@ -144,10 +117,51 @@ end
 
   private
 
+  def result_type(server_result)
+    if server_result =~ /^DigError/
+      :error
+    elsif server_result != authoritative
+      :mismatch
+    else
+      :match
+    end
+  end
+
+  def lookup_authoritative
+    @authoritative = Digger.new(nil, @domain).authoritative_ns_records
+  end
+
   def lookup_ips
     @ips = [{country_id: "US", name: "google", ip: "8.8.8.8", },
             {country_id: "US", name: "cloudflare", ip: "1.1.1.1", }] +
       Servers.send("latest_reliable_#{@geo_area}_servers")
+  end
+end
+
+class ConsoleOutput
+  def initialize(aggregator)
+    @aggregator = aggregator
+    execute
+  end
+
+  def execute
+    puts "Authoritative"
+    puts "============="
+    puts @aggregator.authoritative
+    puts
+
+    puts "Checking #{@aggregator.ips.length} servers"
+
+    @aggregator.dns_results do |result|
+      case result
+      when :error
+        print 'e'
+      when :mismatch
+        print 'x'
+      else
+        print '.'
+      end
+    end
   end
 end
 
@@ -164,4 +178,4 @@ end
 # TODO: options: filter out matches in table, and reliability factor
 
 geo_area = ARGV[1]
-Aggregator.new(domain, geo_area).execute
+ConsoleOutput.new(Aggregator.new(domain, geo_area))
