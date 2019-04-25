@@ -49,7 +49,9 @@ rescue
 end
 
 def registrar_nameservers(domain)
-  # TODO: I think dnsruby has a way to do this directly, without parsing whois output.
+  # TODO: dnsruby has a Recursor class which is really complicated internally.
+  # TODO: \ Trying to re-use it here looks like a lot of work. Cool to be able
+  # TODO: \ to do, but, not worth my time right now.
 
   registrar_nameservers = `whois #{domain}`.scan(/Name Server: (\S+).*/).flatten
   puts "Registrar Nameservers:"
