@@ -25,7 +25,19 @@ def download_latest_reliable_dns_servers
 
   download = open(url)
   CSV.new(download, headers: true).
-    select { |r| r["reliability"].to_f > 0.95 }.
+    select { |r| r["reliability"].to_f > 0.95 }
+end
+
+def latest_reliable_global_servers
+  download_latest_reliable_dns_servers.
+    group_by { |r| r["country_id"] }.
+    map { |_, rows| rows.first }.
+    map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
+end
+
+def latest_reliable_us_servers
+  download_latest_reliable_dns_servers.
+    select { |r| r["country_id"] == "US" }.
     map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
 end
 
@@ -47,8 +59,7 @@ puts group_by_domains(registrar_nameservers.uniq)
 puts
 
 ips = [{country_id: "US", name: "google", ip: "8.8.8.8", },
-       {country_id: "US", name: "cloudflare", ip: "1.1.1.1", }] +
-  download_latest_reliable_dns_servers
+       {country_id: "US", name: "cloudflare", ip: "1.1.1.1", }] + latest_reliable_us_servers
 
 ips.each do |r|
   title = r[:name] || r[:country_id]
