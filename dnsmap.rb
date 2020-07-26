@@ -34,25 +34,25 @@ class Servers
       select { true }.
       tap { |ary| @total_count = ary.count }.
       select { |r| r["reliability"].to_f >= @reliability_threshold }.
-      select { |r| r["ip"] =~ /\d+\.\d+\.\d+\.\d+/ }
+      select { |r| r["ip_address"] =~ /\d+\.\d+\.\d+\.\d+/ }
   end
 
   def latest_reliable_global_servers_one_per_country
     latest_reliable_server_list.
       group_by { |r| r["country_id"] }.
       map { |_, rows| rows.first }.
-      map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
+      map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip_address"]} }
   end
 
   def latest_reliable_global_servers
     latest_reliable_server_list.
-      map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
+      map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip_address"]} }
   end
 
   def latest_reliable_us_servers
     latest_reliable_server_list.
       select { |r| r["country_id"] == "US" }.
-      map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip"]} }
+      map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip_address"]} }
   end
 end
 
