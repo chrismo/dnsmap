@@ -109,10 +109,11 @@ end
 class Aggregator
   attr_reader :authoritative, :ips, :results, :total_server_count
 
-  def initialize(domain, geo_area, reliability:, diff_only:)
+  def initialize(domain, geo_area, reliability:, diff_only:, max_servers:)
     @domain = domain
     @geo_area = ["global", "us"].include?(geo_area) ? geo_area : "global"
     @reliability = reliability
+    @max_servers = max_servers
     @diff_only = diff_only
     lookup_authoritative
     lookup_ips
@@ -180,7 +181,7 @@ class Aggregator
 
   def lookup_ips
     servers = Servers.new(@reliability)
-    selected_servers = servers.send("latest_reliable_#{@geo_area}_servers")
+    selected_servers = servers.send("latest_reliable_#{@geo_area}_servers")[0..@max_servers]
     @total_server_count = servers.total_count
     @ips = [{country_id: "US", name: "google", ip: "8.8.8.8", },
             {country_id: "US", name: "cloudflare", ip: "1.1.1.1", }] +
@@ -222,6 +223,7 @@ opts = Slop.parse do |o|
   o.banner = "Usage: #{File.basename(__FILE__)} domain ['us' | 'global']"
   o.bool '-d', '--differences-only', 'only list differences from authoritative'
   o.integer '-r', '--reliability', 'server reliability threshold', default: 96
+  o.integer '-x', '--max-servers', 'max number of servers', default: 1_000
   o.on '-h', '--help' do
     puts o
     exit
@@ -231,4 +233,5 @@ end
 domain, geo_area = *opts.args
 ConsoleOutput.new(Aggregator.new(domain, geo_area,
                                  reliability: opts[:reliability],
-                                 diff_only: opts[:differences_only]))
+                                 diff_only: opts[:differences_only],
+                                 max_servers: opts[:max_servers]))

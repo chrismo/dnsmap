@@ -6,3 +6,16 @@ For the articles that will go out, I'll need to start
 over as well in a fresh repo, since I'll have details
 and such that I'll need to flesh out as I write the
 articles.
+
+
+== Name
+
+dnsmap is taken.
+
+dinus - divine
+deinos - terrible
+denis - let's just call it denis
+
+== TODO
+
+https://github.com/weppos/whois - pure ruby implementation
