@@ -39,7 +39,7 @@ class Servers
 
   def latest_reliable_global_servers_one_per_country
     latest_reliable_server_list.
-      group_by { |r| r["country_id"] }.
+      group_by { |r| r["country_code"] }.
       map { |_, rows| rows.first }.
       map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip_address"]} }
   end
@@ -51,7 +51,7 @@ class Servers
 
   def latest_reliable_us_servers
     latest_reliable_server_list.
-      select { |r| r["country_id"] == "US" }.
+      select { |r| r["country_code"] == "US" }.
       map { |row| {country_id: row["country_id"], name: row["name"], ip: row["ip_address"]} }
   end
 end
