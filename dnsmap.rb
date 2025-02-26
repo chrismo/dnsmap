@@ -2,6 +2,7 @@
 
 require "open-uri"
 require "csv"
+require 'delegate'
 
 require "bundler/inline"
 
@@ -12,6 +13,7 @@ gemfile do
   gem "dnsruby"
   gem "slop", "~> 4"
 end
+
 
 require "tablesmith"
 require "active_support"
@@ -98,9 +100,10 @@ class Digger
     return output if output =~ /^DigError/
 
     output.
+      map { |ln| ln.downcase }.
       uniq.
       sort.
-      map { |ln| ln.downcase.split(/\./) }.
+      map { |ln| ln.split(/\./) }.
       group_by { |ary| ary[1..2].join(".") }.
       map { |domain, servers| [domain, servers.map(&:first)] }.to_h
   end
